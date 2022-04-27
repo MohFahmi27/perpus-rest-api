@@ -1,17 +1,19 @@
 from dataclasses import field
 from enum import unique
 from lib2to3.pgen2 import token
+from operator import and_
 from os import link
 from webbrowser import get
 from xmlrpc.client import boolean
 
-from flask import Flask, jsonify
+from flask import Flask, jsonify, request
 from flask_mail import Mail, Message
 from flask_restful import (Api, Resource, abort, fields, marshal, marshal_with,
                            reqparse, url_for)
 from flask_sqlalchemy import SQLAlchemy
 from itsdangerous import SignatureExpired, URLSafeTimedSerializer
-from sqlalchemy import false
+from sqlalchemy import Column, false, and_, Date, ForeignKey
+from datetime import date, timedelta
 
 app = Flask(__name__)
 api = Api(app)
@@ -72,6 +74,21 @@ resource_fields_mahasiswa = {
 	'no_hp': fields.String
 }
 
+class PetugasModel(db.Model):
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    nama = db.Column(db.String(45), nullable=False)
+    no_hp = db.Column(db.String(13), nullable=False)
+
+petugas_put_args = reqparse.RequestParser()
+petugas_put_args.add_argument("nama", type=str, help="Nama is required", required=True)
+petugas_put_args.add_argument("no_hp", type=str, help="No Telp is required", required=True)
+
+resource_fields_petugas = {
+    'id' : fields.Integer,
+    'nama' : fields.String,
+	'no_hp': fields.String
+} 
+
 class UserModel(db.Model):
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     email = db.Column(db.String(45), nullable=False, unique=True)
@@ -93,19 +110,69 @@ resource_fields_user = {
 resource_fields_user_sign_in = {
 	'token': fields.String
 }    
-    
+
+class PeminjamanModel(db.Model):
+    id_peminjaman = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    tanggal_peminjaman = db.Column(db.Date, nullable=False)
+    tanggal_kembali = db.Column(db.Date, nullable=False)
+    denda = db.Column(db.Integer, nullable=False, default=0)
+    nim_mahasiswa = db.Column(db.String(9), ForeignKey(SiswaModel.nim))
+    id_petugas = db.Column(db.Integer, ForeignKey(PetugasModel.id))
+
+peminjaman_put_args = reqparse.RequestParser()
+peminjaman_put_args.add_argument("nim_mahasiswa", type=str, help="NIM is required", required=True)
+peminjaman_put_args.add_argument("id_petugas", type=str, help="ID Petugas is required", required=True)
+
+resource_fields_peminjaman = {
+    'id_peminjaman' : fields.Integer,
+	'tanggal_peminjaman': fields.String,
+	'tanggal_kembali': fields.String,
+	'denda': fields.Integer,
+	'nim_mahasiswa': fields.String,
+	'id_petugas': fields.Integer,
+}    
+
+class PeminjamanDetailModel(db.Model):
+    id_detail_peminjaman = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    id_peminjaman = db.Column(db.Integer, ForeignKey(PeminjamanModel.id_peminjaman))
+    id_buku = db.Column(db.Integer, ForeignKey(BukuModel.id))
+
+peminjaman_detail_put_args = reqparse.RequestParser()
+peminjaman_detail_put_args.add_argument("id_buku", type=int, help="ID BUKU is required", required=True)
+
+resource_fields_peminjaman_detail = {
+    'id_detail_peminjaman' : fields.Integer,
+	'id_peminjaman': fields.Integer,
+	'id_buku': fields.Integer
+} 
+
+db.create_all()
+
 class get_all_buku(Resource):
     @marshal_with(resource_fields_buku)
     def get(self):
-        return BukuModel.query.all()
+        headers = request.headers
+        authorization = headers.get("Authorization")
+        user = UserModel.query.filter_by(token=authorization).count()
+
+        if(user == 1):
+            return BukuModel.query.all()
+        else :
+            abort(401, message="Unauthorized")
 
 class detail_buku(Resource):
     @marshal_with(resource_fields_buku)
     def get(self, buku_id):
+        headers = request.headers
+        authorization = headers.get("Authorization")
         result = BukuModel.query.filter_by(id=buku_id).first()
-        if not result:
-            abort(404, message="Could not find Anything")
-        return result
+        user = UserModel.query.filter_by(token=authorization).count()
+        if (user == 1):
+            if not result:
+                abort(404, message="Could not find Anything")
+            return result
+        else:
+            abort(401, message="Unauthorized")
 
 class add_buku(Resource):
     @marshal_with(resource_fields_buku)
@@ -138,6 +205,53 @@ class add_mahasiswa(Resource):
         db.session.commit()
         return mahasiswa, 200
 
+class add_petugas(Resource):
+    @marshal_with(resource_fields_petugas)
+    def post(self):
+        args = petugas_put_args.parse_args()
+        petugas = PetugasModel(nama=args['nama'], no_hp=args['no_hp'])
+        db.session.add(petugas)
+        db.session.commit()
+        return petugas, 200
+
+class detail_petugas(Resource):
+    @marshal_with(resource_fields_petugas)
+    def get(self, id_petugas):
+        result = PetugasModel.query.filter_by(id=id_petugas).first()
+        if not result:
+            abort(404, message="Could not find anything")
+        return result
+
+class add_peminjaman(Resource):
+    @marshal_with(resource_fields_peminjaman)
+    def post(self):
+        args = peminjaman_put_args.parse_args()
+        mahasiswa = SiswaModel.query.filter_by(nim=args['nim_mahasiswa']).first()
+        petugas = PetugasModel.query.filter_by(id=args['id_petugas']).first()
+        peminjaman = PeminjamanModel(tanggal_peminjaman=date.today(), tanggal_kembali=(date.today()) + timedelta(weeks=2), nim_mahasiswa=mahasiswa.nim, id_petugas=petugas.id)
+        db.session.add(peminjaman)
+        db.session.commit()
+        return peminjaman, 200
+
+class add_detail_peminjaman(Resource):
+    @marshal_with(resource_fields_peminjaman_detail)
+    def post(self, id_peminjaman):
+        args = peminjaman_detail_put_args.parse_args()
+        peminjaman = PeminjamanModel.query.filter_by(id_peminjaman=id_peminjaman).first()
+        buku = BukuModel.query.filter_by(id=args['id_buku']).first()
+        peminjaman_detail = PeminjamanDetailModel(id_peminjaman=peminjaman.id_peminjaman, id_buku=buku.id)
+        db.session.add(peminjaman_detail)
+        db.session.commit()
+        return peminjaman_detail, 200
+
+class get_detail_peminjaman(Resource):
+    @marshal_with(resource_fields_peminjaman_detail)
+    def get(self, id_peminjaman):
+        result = PeminjamanDetailModel.query.filter_by(id_peminjaman=id_peminjaman).all()
+        if not result:
+            abort(404, message="Could not find anything")
+        return result
+
 class sign_up(Resource):
     @marshal_with(resource_fields_user)
     def post(self):
@@ -160,12 +274,12 @@ class sign_in(Resource):
     @marshal_with(resource_fields_user_sign_in)
     def post(self):
         args = user_put_args.parse_args()
-        login = UserModel.query.filter_by(email=args['email'], password=args['password']).first()
+        login = UserModel.query.filter(and_(UserModel.email==args['email'], UserModel.password==args['password'])).first()
         if not login:
             abort(404, message="User Doesn't Exist")
 
         if(login.verify_status == True):
-            return login, 200
+            return login, 200   
         else :
             abort(401, message="Login Unsuccessfull")
 
@@ -193,6 +307,16 @@ api.add_resource(add_buku, "/buku")
 api.add_resource(get_all_mahasiswa, "/mahasiswa")
 api.add_resource(detail_mahasiswa, "/mahasiswa/<nim>")
 api.add_resource(add_mahasiswa, "/mahasiswa")
+
+# PETUGAS
+api.add_resource(detail_petugas, "/petugas/<int:id_petugas>")
+api.add_resource(add_petugas, "/petugas")
+
+# PEMINJAMAN
+api.add_resource(add_peminjaman, "/peminjaman")
+api.add_resource(add_detail_peminjaman, "/peminjaman/<int:id_peminjaman>")
+api.add_resource(get_detail_peminjaman, "/peminjaman/<int:id_peminjaman>")
+
 
 if __name__ == "__main__":
 	app.run(debug=True)
