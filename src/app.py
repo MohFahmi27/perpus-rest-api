@@ -1,4 +1,5 @@
 from dataclasses import field
+from email import message
 from enum import unique
 from lib2to3.pgen2 import token
 from operator import and_
@@ -20,7 +21,7 @@ api = Api(app)
 mail = Mail(app)
 
 # Configure Database
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///database.db'
+app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///tmp/perpus.db'
 db = SQLAlchemy(app)
 
 # Configure Email Verification
@@ -129,7 +130,7 @@ resource_fields_peminjaman = {
 	'tanggal_kembali': fields.String,
 	'denda': fields.Integer,
 	'nim_mahasiswa': fields.String,
-	'id_petugas': fields.Integer,
+	'id_petugas': fields.Integer
 }    
 
 class PeminjamanDetailModel(db.Model):
@@ -146,7 +147,15 @@ resource_fields_peminjaman_detail = {
 	'id_buku': fields.Integer
 } 
 
-db.create_all()
+resource_fields_get_peminjaman = {
+    'id_peminjaman' : fields.Integer,
+	'tanggal_peminjaman': fields.String,
+	'tanggal_kembali': fields.String,
+	'denda': fields.Integer,
+	'nim_mahasiswa': fields.String,
+	'id_petugas': fields.Integer
+}
+
 
 class get_all_buku(Resource):
     @marshal_with(resource_fields_buku)
@@ -156,9 +165,9 @@ class get_all_buku(Resource):
         user = UserModel.query.filter_by(token=authorization).count()
 
         if(user == 1):
-            return BukuModel.query.all()
+            return BukuModel.query.all(), 200
         else :
-            abort(401, message="Unauthorized")
+            abort(403, message="Forbidden: Authentication token doesn't exist")
 
 class detail_buku(Resource):
     @marshal_with(resource_fields_buku)
@@ -169,19 +178,22 @@ class detail_buku(Resource):
         user = UserModel.query.filter_by(token=authorization).count()
         if (user == 1):
             if not result:
-                abort(404, message="Could not find Anything")
+                abort(404, message="Not Found: Could not find Anything")
             return result
         else:
-            abort(401, message="Unauthorized")
+            abort(403, message="Forbidden: Authentication token doesn't exist")
 
 class add_buku(Resource):
     @marshal_with(resource_fields_buku)
     def post(self):
         args = buku_put_args.parse_args()
         buku = BukuModel(isbn=args['isbn'], judul_buku=args['judul_buku'], pengarang=args['pengarang'], tahun_terbit=args['tahun_terbit'], qty_buku=args['qty_buku'])
-        db.session.add(buku)
-        db.session.commit()
-        return buku, 200
+        try:
+            db.session.add(buku)
+            db.session.commit()
+            return buku, 200
+        except Exception:
+            abort(400, message=f"Bad Request: Something went wrong!")  
 
 class get_all_mahasiswa(Resource):
     @marshal_with(resource_fields_mahasiswa)
@@ -201,18 +213,24 @@ class add_mahasiswa(Resource):
     def post(self):
         args = mahasiswa_put_args.parse_args()
         mahasiswa = SiswaModel(nim=args['nim'], nama=args['nama'], no_hp=args['no_hp'])
-        db.session.add(mahasiswa)
-        db.session.commit()
-        return mahasiswa, 200
+        try:
+            db.session.add(mahasiswa)
+            db.session.commit()
+            return mahasiswa, 200
+        except Exception:
+            abort(400, message=f"Bad Request: NIM already been used")  
 
 class add_petugas(Resource):
     @marshal_with(resource_fields_petugas)
     def post(self):
         args = petugas_put_args.parse_args()
         petugas = PetugasModel(nama=args['nama'], no_hp=args['no_hp'])
-        db.session.add(petugas)
-        db.session.commit()
-        return petugas, 200
+        try:
+            db.session.add(petugas)
+            db.session.commit()
+            return petugas, 200
+        except Exception as e:
+            abort(400, message=f"Bad Request: Something went wrong {e}")  
 
 class detail_petugas(Resource):
     @marshal_with(resource_fields_petugas)
@@ -220,7 +238,7 @@ class detail_petugas(Resource):
         result = PetugasModel.query.filter_by(id=id_petugas).first()
         if not result:
             abort(404, message="Could not find anything")
-        return result
+        return result, 200
 
 class add_peminjaman(Resource):
     @marshal_with(resource_fields_peminjaman)
@@ -229,9 +247,12 @@ class add_peminjaman(Resource):
         mahasiswa = SiswaModel.query.filter_by(nim=args['nim_mahasiswa']).first()
         petugas = PetugasModel.query.filter_by(id=args['id_petugas']).first()
         peminjaman = PeminjamanModel(tanggal_peminjaman=date.today(), tanggal_kembali=(date.today()) + timedelta(weeks=2), nim_mahasiswa=mahasiswa.nim, id_petugas=petugas.id)
-        db.session.add(peminjaman)
-        db.session.commit()
-        return peminjaman, 200
+        try:
+            db.session.add(peminjaman)
+            db.session.commit()
+            return peminjaman, 201
+        except Exception as e:
+            abort(400, message=f"Bad Request: Something went wrong {e}")  
 
 class add_detail_peminjaman(Resource):
     @marshal_with(resource_fields_peminjaman_detail)
@@ -240,9 +261,12 @@ class add_detail_peminjaman(Resource):
         peminjaman = PeminjamanModel.query.filter_by(id_peminjaman=id_peminjaman).first()
         buku = BukuModel.query.filter_by(id=args['id_buku']).first()
         peminjaman_detail = PeminjamanDetailModel(id_peminjaman=peminjaman.id_peminjaman, id_buku=buku.id)
-        db.session.add(peminjaman_detail)
-        db.session.commit()
-        return peminjaman_detail, 200
+        try:
+            db.session.add(peminjaman_detail)
+            db.session.commit()
+            return peminjaman_detail, 201
+        except Exception as e:
+            abort(400, message=f"Bad Request: Something went wrong {e}")  
 
 class get_detail_peminjaman(Resource):
     @marshal_with(resource_fields_peminjaman_detail)
@@ -256,19 +280,27 @@ class sign_up(Resource):
     @marshal_with(resource_fields_user)
     def post(self):
         args = user_put_args.parse_args()
+        checkUserAvability = UserModel.query.filter_by(email=args['email']).count()
+        if (checkUserAvability >= 1):
+            abort(400, message="Bad Request: Email already used")
+
         generated_token = secretEncodeDummy.dumps(args['email'], salt='email_verification')
-
         user = UserModel(email=args['email'], password=args['password'], token=generated_token)
-        db.session.add(user)
-        db.session.commit()
+        try:
+            db.session.add(user)
+            db.session.commit()
 
-        # Send Email
-        email = args['email']
-        msg = Message('Verifikasi Email Perpustakaan', sender='mohfahmi270@gmail.com', recipients=[email])
-        link = url_for('confirm_email', token=generated_token, _external=True)
-        msg.body = f'Silahkan klik link berikut ini untuk memverifikasi akun anda: {link}'
-        mail.send(msg)
-        return user, 200
+            # Send Email
+            email = args['email']
+            msg = Message('Verifikasi Email Perpustakaan', sender='mohfahmi270@gmail.com', recipients=[email])
+            link = url_for('confirm_email', token=generated_token, _external=True)
+            msg.body = f'Silahkan klik link berikut ini untuk memverifikasi akun anda: {link}'
+            mail.send(msg)
+            return user, 201
+        except Exception as e:
+            abort(400, message=f"Bad Request: Something went wrong {e}")  
+
+        
 
 class sign_in(Resource):
     @marshal_with(resource_fields_user_sign_in)
@@ -276,12 +308,12 @@ class sign_in(Resource):
         args = user_put_args.parse_args()
         login = UserModel.query.filter(and_(UserModel.email==args['email'], UserModel.password==args['password'])).first()
         if not login:
-            abort(404, message="User Doesn't Exist")
+            abort(404, message="Not Found: User Doesn't Exist")
 
         if(login.verify_status == True):
             return login, 200   
         else :
-            abort(401, message="Login Unsuccessfull")
+            abort(401, message="Unauthorized: Login Unsuccessfull")
 
 @app.route('/confirm_email/<token>', methods=['GET'])
 def confirm_email(token):
@@ -292,7 +324,9 @@ def confirm_email(token):
         db.session.commit()
     except SignatureExpired:
         return jsonify({"message": "ERROR: Token Has Been Expired"}), 401
-    return jsonify({"message": "OK: Email Have been successfully verify"}), 200
+    except Exception as e:
+        abort(400, message=f"Bad Request: Something went Wrong: {e}")  
+    return jsonify({"message": "OK: Email Have been successfully verify"}), 201
 
 # AUTH
 api.add_resource(sign_up, "/signup")
@@ -315,7 +349,7 @@ api.add_resource(add_petugas, "/petugas")
 # PEMINJAMAN
 api.add_resource(add_peminjaman, "/peminjaman")
 api.add_resource(add_detail_peminjaman, "/peminjaman/<int:id_peminjaman>")
-api.add_resource(get_detail_peminjaman, "/peminjaman/<int:id_peminjaman>")
+api.add_resource(get_detail_peminjaman, "/peminjaman/<int:id_peminjaman>/detail")
 
 
 if __name__ == "__main__":
