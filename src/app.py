@@ -22,6 +22,7 @@ mail = Mail(app)
 
 # Configure Database
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///tmp/perpus.db'
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db = SQLAlchemy(app)
 
 # Configure Email Verification
@@ -244,10 +245,10 @@ class add_peminjaman(Resource):
     @marshal_with(resource_fields_peminjaman)
     def post(self):
         args = peminjaman_put_args.parse_args()
-        mahasiswa = SiswaModel.query.filter_by(nim=args['nim_mahasiswa']).first()
-        petugas = PetugasModel.query.filter_by(id=args['id_petugas']).first()
-        peminjaman = PeminjamanModel(tanggal_peminjaman=date.today(), tanggal_kembali=(date.today()) + timedelta(weeks=2), nim_mahasiswa=mahasiswa.nim, id_petugas=petugas.id)
         try:
+            mahasiswa = SiswaModel.query.filter_by(nim=args['nim_mahasiswa']).first()
+            petugas = PetugasModel.query.filter_by(id=args['id_petugas']).first()
+            peminjaman = PeminjamanModel(tanggal_peminjaman=date.today(), tanggal_kembali=(date.today()) + timedelta(weeks=2), nim_mahasiswa=mahasiswa.nim, id_petugas=petugas.id)
             db.session.add(peminjaman)
             db.session.commit()
             return peminjaman, 201
@@ -258,15 +259,18 @@ class add_detail_peminjaman(Resource):
     @marshal_with(resource_fields_peminjaman_detail)
     def post(self, id_peminjaman):
         args = peminjaman_detail_put_args.parse_args()
-        peminjaman = PeminjamanModel.query.filter_by(id_peminjaman=id_peminjaman).first()
         buku = BukuModel.query.filter_by(id=args['id_buku']).first()
-        peminjaman_detail = PeminjamanDetailModel(id_peminjaman=peminjaman.id_peminjaman, id_buku=buku.id)
+        if (buku.qty_buku <= 0):
+            abort(400, message=f"Bad Request: Buku Stock Not Available")
         try:
+            peminjaman = PeminjamanModel.query.filter_by(id_peminjaman=id_peminjaman).first()  
+            peminjaman_detail = PeminjamanDetailModel(id_peminjaman=peminjaman.id_peminjaman, id_buku=buku.id)
+            buku.qty_buku = buku.qty_buku - 1
             db.session.add(peminjaman_detail)
             db.session.commit()
             return peminjaman_detail, 201
         except Exception as e:
-            abort(400, message=f"Bad Request: Something went wrong {e}")  
+            abort(400, message=f"Bad Request: Something went wrong | {e}")  
 
 class get_detail_peminjaman(Resource):
     @marshal_with(resource_fields_peminjaman_detail)
@@ -298,9 +302,7 @@ class sign_up(Resource):
             mail.send(msg)
             return user, 201
         except Exception as e:
-            abort(400, message=f"Bad Request: Something went wrong {e}")  
-
-        
+            abort(400, message=f"Bad Request: Something went wrong {e}")     
 
 class sign_in(Resource):
     @marshal_with(resource_fields_user_sign_in)
@@ -308,17 +310,17 @@ class sign_in(Resource):
         args = user_put_args.parse_args()
         login = UserModel.query.filter(and_(UserModel.email==args['email'], UserModel.password==args['password'])).first()
         if not login:
-            abort(404, message="Not Found: User Doesn't Exist")
+            abort(400, message="Bad Request: Login Unsuccessfull Check email and password")
 
         if(login.verify_status == True):
             return login, 200   
         else :
-            abort(401, message="Unauthorized: Login Unsuccessfull")
+            abort(401, message="Unauthorized: User Not Verify")
 
 @app.route('/confirm_email/<token>', methods=['GET'])
 def confirm_email(token):
     try:
-        secretEncodeDummy.loads(token, salt='email_verification', max_age=3600)
+        secretEncodeDummy.loads(token, salt='email_verification', max_age=5)
         user = UserModel.query.filter_by(token=token).first()
         user.verify_status = True
         db.session.commit()
