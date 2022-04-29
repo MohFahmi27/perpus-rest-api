@@ -15,6 +15,8 @@ from flask_sqlalchemy import SQLAlchemy
 from itsdangerous import SignatureExpired, URLSafeTimedSerializer
 from sqlalchemy import Column, false, and_, Date, ForeignKey
 from datetime import date, timedelta
+from password_strength import PasswordPolicy, PasswordStats
+
 
 app = Flask(__name__)
 api = Api(app)
@@ -29,6 +31,15 @@ db = SQLAlchemy(app)
 secretEncodeDummy = URLSafeTimedSerializer('SecretTokenDummy!')
 app.config.from_pyfile('config.cfg')
 mail = Mail(app)
+
+# password policy
+policy = PasswordPolicy.from_names(
+    length=8,  # min length: 8
+    uppercase=1,  # need min. 1 uppercase letters
+    numbers=1,  # need min. 1 digits
+)
+
+# ===== DATABASE MODELS ===== 
 
 class BukuModel(db.Model):
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
@@ -157,6 +168,8 @@ resource_fields_get_peminjaman = {
 	'id_petugas': fields.Integer
 }
 
+
+# ===== ENDPOINTS CONFIGURE ===== 
 
 class get_all_buku(Resource):
     @marshal_with(resource_fields_buku)
@@ -287,10 +300,12 @@ class sign_up(Resource):
         checkUserAvability = UserModel.query.filter_by(email=args['email']).count()
         if (checkUserAvability >= 1):
             abort(400, message="Bad Request: Email already used")
+        if policy.test(args['password']):
+            abort(400, message="Bad Request: Password not strong enough | password atleast 8 characters, Has A digit, and Has Uppercase Letter")
 
-        generated_token = secretEncodeDummy.dumps(args['email'], salt='email_verification')
-        user = UserModel(email=args['email'], password=args['password'], token=generated_token)
         try:
+            generated_token = secretEncodeDummy.dumps(args['email'], salt='email_verification')
+            user = UserModel(email=args['email'], password=args['password'], token=generated_token)
             db.session.add(user)
             db.session.commit()
 
@@ -329,6 +344,8 @@ def confirm_email(token):
     except Exception as e:
         abort(400, message=f"Bad Request: Something went Wrong: {e}")  
     return jsonify({"message": "OK: Email Have been successfully verify"}), 201
+
+# ===== ENDPOINTS ===== 
 
 # AUTH
 api.add_resource(sign_up, "/signup")

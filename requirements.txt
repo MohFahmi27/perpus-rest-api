@@ -40,6 +40,8 @@ markupsafe==2.1.1
     # via
     #   -r requirements.in
     #   jinja2
+password-strength==0.0.3.post2
+    # via -r requirements.in
 pytz==2022.1
     # via
     #   -r requirements.in
@@ -48,6 +50,7 @@ six==1.16.0
     # via
     #   -r requirements.in
     #   flask-restful
+    #   password-strength
 sqlalchemy==1.4.36
     # via
     #   -r requirements.in
