@@ -183,6 +183,19 @@ class get_all_buku(Resource):
         else :
             abort(403, message="Forbidden: Authentication token doesn't exist")
 
+class search_buku(Resource):
+    @marshal_with(resource_fields_buku)
+    def get(self):
+        headers = request.headers
+        query = request.args.get("q")
+        authorization = headers.get("Authorization")
+        user = UserModel.query.filter_by(token=authorization).count()
+
+        if(user == 1):
+            return BukuModel.query.filter(BukuModel.judul_buku.like(f"%{query}%")).all(), 200
+        else :
+            abort(403, message="Forbidden: Authentication token doesn't exist")
+
 class detail_buku(Resource):
     @marshal_with(resource_fields_buku)
     def get(self, buku_id):
@@ -353,6 +366,7 @@ api.add_resource(sign_in, "/signin")
 
 # BUKU
 api.add_resource(get_all_buku, "/buku")
+api.add_resource(search_buku, "/buku/search")
 api.add_resource(detail_buku, "/buku/<int:buku_id>")
 api.add_resource(add_buku, "/buku")
 
