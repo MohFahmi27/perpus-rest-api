@@ -273,6 +273,23 @@ class add_buku(Resource):
             abort(400, message=f"Bad Request: Something went wrong!")
 
 
+class delete_buku(Resource):
+    @marshal_with(resource_fields_buku)
+    def delete(self, buku_id):
+        headers = request.headers
+        authorization = headers.get("Authorization")
+        user = UserModel.query.filter_by(token=authorization).count()
+        result = BukuModel.query.filter_by(id=buku_id).first()
+        if (user == 1):
+            if not result:
+                abort(404, message="Not Found: Could not find Anything")
+            else:
+                db.session.delete(result)
+                db.session.commit()
+                return result, 200
+        else:
+            abort(403, message="Forbidden: Authentication token doesn't exist")
+
 class get_all_mahasiswa(Resource):
     @marshal_with(resource_fields_mahasiswa)
     def get(self):
@@ -459,6 +476,7 @@ api.add_resource(sign_in, "/signin")
 api.add_resource(get_all_buku, "/buku")
 api.add_resource(search_buku, "/buku/search")
 api.add_resource(detail_buku, "/buku/<int:buku_id>")
+api.add_resource(delete_buku, "/buku/<int:buku_id>")
 api.add_resource(add_buku, "/buku")
 
 # MAHASISWA
