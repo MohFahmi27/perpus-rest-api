@@ -67,6 +67,13 @@ buku_put_args.add_argument("tahun_terbit", type=str,
 buku_put_args.add_argument(
     "qty_buku", type=int, help="Quantity Buku is required", required=True)
 
+buku_put_args_edit = reqparse.RequestParser()
+buku_put_args_edit.add_argument("isbn", type=str)
+buku_put_args_edit.add_argument("judul_buku", type=str)
+buku_put_args_edit.add_argument("pengarang", type=str)
+buku_put_args_edit.add_argument("tahun_terbit", type=str)
+buku_put_args_edit.add_argument("qty_buku", type=int)
+
 resource_fields_buku = {
     'id': fields.Integer,
     'isbn': fields.String,
@@ -290,6 +297,35 @@ class delete_buku(Resource):
         else:
             abort(403, message="Forbidden: Authentication token doesn't exist")
 
+
+class update_buku(Resource):
+    @marshal_with(resource_fields_buku)
+    def patch(self, buku_id):
+        headers = request.headers
+        authorization = headers.get("Authorization")
+        user = UserModel.query.filter_by(token=authorization).count()
+        result = BukuModel.query.filter_by(id=buku_id).first()
+        if (user == 1):
+            if not result:
+                abort(404, message="Not Found: Could not find Anything")
+            else:
+                args = buku_put_args_edit.parse_args()
+                if args['isbn']:
+                    result.isbn = args['isbn']
+                if args['judul_buku']:
+                    result.judul_buku = args['judul_buku']
+                if args['pengarang']:
+                    result.pengarang = args['pengarang']
+                if args['tahun_terbit']:
+                    result.tahun_terbit = args['tahun_terbit']
+                if args['qty_buku']:
+                    result.qty_buku = args['qty_buku']
+                db.session.commit()
+                return result, 200
+        else:
+            abort(403, message="Forbidden: Authentication token doesn't exist")
+
+
 class get_all_mahasiswa(Resource):
     @marshal_with(resource_fields_mahasiswa)
     def get(self):
@@ -477,6 +513,7 @@ api.add_resource(get_all_buku, "/buku")
 api.add_resource(search_buku, "/buku/search")
 api.add_resource(detail_buku, "/buku/<int:buku_id>")
 api.add_resource(delete_buku, "/buku/<int:buku_id>")
+api.add_resource(update_buku, "/buku/<int:buku_id>")
 api.add_resource(add_buku, "/buku")
 
 # MAHASISWA
