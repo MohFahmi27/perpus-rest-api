@@ -491,7 +491,7 @@ class sign_in(Resource):
 @app.route('/confirm_email/<token>', methods=['GET'])
 def confirm_email(token):
     try:
-        secretEncodeDummy.loads(token, salt='email_verification', max_age=5)
+        secretEncodeDummy.loads(token, salt='email_verification', max_age=3600)
         user = UserModel.query.filter_by(token=token).first()
         user.verify_status = True
         db.session.commit()
@@ -501,12 +501,32 @@ def confirm_email(token):
         abort(400, message=f"Bad Request: Something went Wrong: {e}")
     return jsonify({"message": "OK: Email Have been successfully verify"}), 201
 
+class delete_user(Resource):
+    @marshal_with(resource_fields_user)
+    def delete(self, user_id):
+        headers = request.headers
+        authorization = headers.get("Authorization")
+        user = UserModel.query.filter_by(token=authorization).count()
+        result = UserModel.query.filter_by(id=user_id).first()
+        if (user == 1):
+            if not result:
+                abort(404, message="Not Found: Could not find Anything")
+            else:
+                db.session.delete(result)
+                db.session.commit()
+                return result, 200
+        else:
+            abort(403, message="Forbidden: Authentication token doesn't exist")
+
 # ===== ENDPOINTS =====
 
 
 # AUTH
 api.add_resource(sign_up, "/signup")
 api.add_resource(sign_in, "/signin")
+
+# USER
+api.add_resource(delete_user, "/user/<int:user_id>")
 
 # BUKU
 api.add_resource(get_all_buku, "/buku")
