@@ -490,16 +490,19 @@ class sign_in(Resource):
 
 @app.route('/confirm_email/<token>', methods=['GET'])
 def confirm_email(token):
+    user = UserModel.query.filter_by(token=token).first()
     try:
         secretEncodeDummy.loads(token, salt='email_verification', max_age=3600)
-        user = UserModel.query.filter_by(token=token).first()
         user.verify_status = True
         db.session.commit()
     except SignatureExpired:
+        db.session.delete(user)
+        db.session.commit()
         return jsonify({"message": "ERROR: Token Has Been Expired"}), 401
     except Exception as e:
         abort(400, message=f"Bad Request: Something went Wrong: {e}")
     return jsonify({"message": "OK: Email Have been successfully verify"}), 201
+
 
 class delete_user(Resource):
     @marshal_with(resource_fields_user)
