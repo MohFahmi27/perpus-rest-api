@@ -440,6 +440,18 @@ class get_complete_data_peminjaman(Resource):
         return result
 
 
+class get_all_user(Resource):
+    @marshal_with(resource_fields_user)
+    def get(self):
+        headers = request.headers
+        authorization = headers.get("Authorization")
+        user = UserModel.query.filter_by(token=authorization).count()
+
+        if(user == 1):
+            return UserModel.query.all(), 200
+        else:
+            abort(403, message="Forbidden: Authentication token doesn't exist")
+
 class sign_up(Resource):
     @marshal_with(resource_fields_user)
     def post(self):
@@ -529,6 +541,7 @@ api.add_resource(sign_up, "/signup")
 api.add_resource(sign_in, "/signin")
 
 # USER
+api.add_resource(get_all_user, "/users")
 api.add_resource(delete_user, "/user/<int:user_id>")
 
 # BUKU
