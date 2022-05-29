@@ -24,7 +24,7 @@ api = Api(app)
 mail = Mail(app)
 
 # Configure Database
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///tmp/perpus.db'
+app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///tmp/perpus.sqlite'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db = SQLAlchemy(app)
 
@@ -43,7 +43,7 @@ policy = PasswordPolicy.from_names(
 # ===== DATABASE MODELS =====
 
 
-class BukuModel(db.Model):
+class Buku(db.Model):
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     isbn = db.Column(db.String(10), nullable=False)
     judul_buku = db.Column(db.String(100), nullable=False)
@@ -84,7 +84,7 @@ resource_fields_buku = {
 }
 
 
-class SiswaModel(db.Model):
+class Siswa(db.Model):
     nim = db.Column(db.String(9), nullable=False,  primary_key=True)
     nama = db.Column(db.String(100), nullable=False)
     no_hp = db.Column(db.String(12), nullable=False)
@@ -108,7 +108,7 @@ resource_fields_mahasiswa = {
 }
 
 
-class PetugasModel(db.Model):
+class Petugas(db.Model):
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     nama = db.Column(db.String(45), nullable=False)
     no_hp = db.Column(db.String(13), nullable=False)
@@ -127,13 +127,56 @@ resource_fields_petugas = {
 }
 
 
-class UserModel(db.Model):
+class MahasiswaLogin(db.Model):
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    nim = db.Column(db.String(9), ForeignKey(Siswa.nim))
     email = db.Column(db.String(45), nullable=False, unique=True)
     password = db.Column(db.String(45), nullable=False)
     token = db.Column(db.String(50), nullable=False)
     verify_status = db.Column(db.Boolean, default=False)
 
+
+mahasiswa_login_put_args = reqparse.RequestParser()
+mahasiswa_login_put_args.add_argument(
+    "nim", type=str, help="NIM is required", required=True)
+mahasiswa_login_put_args.add_argument(
+    "email", type=str, help="Email is required", required=True)
+mahasiswa_login_put_args.add_argument(
+    "password", type=str, help="Password is required", required=True)
+
+resource_fields_mahasiswa_login = {
+    'id': fields.Integer,
+    'nim': fields.String,
+    'email': fields.String,
+    'password': fields.String,
+    'token': fields.String,
+    'verify_status': fields.Boolean
+}
+
+
+class PetugasLogin(db.Model):
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    id_petugas = db.Column(db.String(9), ForeignKey(Petugas.id))
+    email = db.Column(db.String(45), nullable=False, unique=True)
+    password = db.Column(db.String(45), nullable=False)
+    token = db.Column(db.String(50), nullable=False)
+
+
+petugas_login_put_args = reqparse.RequestParser()
+petugas_login_put_args.add_argument(
+    "id_petugas", type=str, help="Id Petugas is required", required=True)
+petugas_login_put_args.add_argument(
+    "email", type=str, help="Email is required", required=True)
+petugas_login_put_args.add_argument(
+    "password", type=str, help="Password is required", required=True)
+
+resource_fields_petugas_login = {
+    'id': fields.Integer,
+    'id_petugas': fields.String,
+    'email': fields.String,
+    'password': fields.String,
+    'token': fields.String
+}
 
 user_put_args = reqparse.RequestParser()
 user_put_args.add_argument(
@@ -153,13 +196,13 @@ resource_fields_user_sign_in = {
 }
 
 
-class PeminjamanModel(db.Model):
+class Peminjaman(db.Model):
     id_peminjaman = db.Column(db.Integer, primary_key=True, autoincrement=True)
     tanggal_peminjaman = db.Column(db.Date, nullable=False)
     tanggal_kembali = db.Column(db.Date, nullable=False)
     denda = db.Column(db.Integer, nullable=False, default=0)
-    nim_mahasiswa = db.Column(db.String(9), ForeignKey(SiswaModel.nim))
-    id_petugas = db.Column(db.Integer, ForeignKey(PetugasModel.id))
+    nim_mahasiswa = db.Column(db.String(9), ForeignKey(Siswa.nim))
+    id_petugas = db.Column(db.Integer, ForeignKey(Petugas.id))
 
     def json(self):
         return {'id_peminjaman': self.id_peminjaman, 'tanggal_peminjaman': self.tanggal_peminjaman, 'tanggal_kembali': self.tanggal_kembali, 'denda': self.denda, 'nim_mahasiswa': self.nim_mahasiswa, 'id_petugas': self.id_petugas}
@@ -181,12 +224,12 @@ resource_fields_peminjaman = {
 }
 
 
-class PeminjamanDetailModel(db.Model):
+class PeminjamanDetail(db.Model):
     id_detail_peminjaman = db.Column(
         db.Integer, primary_key=True, autoincrement=True)
     id_peminjaman = db.Column(
-        db.Integer, ForeignKey(PeminjamanModel.id_peminjaman))
-    id_buku = db.Column(db.Integer, ForeignKey(BukuModel.id))
+        db.Integer, ForeignKey(Peminjaman.id_peminjaman))
+    id_buku = db.Column(db.Integer, ForeignKey(Buku.id))
 
     def __str__(self):
         return f'id_detail: {self.id_detail_peminjaman}, id_peminjaman: {self.id_peminjaman}, id_buku: {self.id_buku}'
@@ -229,10 +272,11 @@ class get_all_buku(Resource):
     def get(self):
         headers = request.headers
         authorization = headers.get("Authorization")
-        user = UserModel.query.filter_by(token=authorization).count()
-
-        if(user == 1):
-            return BukuModel.query.all(), 200
+        user = MahasiswaLogin.query.filter_by(token=authorization).count()
+        petugasLogin = PetugasLogin.query.filter_by(
+            token=authorization).count()
+        if ((user == 1) or (petugasLogin == 1)):
+            return Buku.query.all(), 200
         else:
             abort(403, message="Forbidden: Authentication token doesn't exist")
 
@@ -243,10 +287,11 @@ class search_buku(Resource):
         headers = request.headers
         query = request.args.get("q")
         authorization = headers.get("Authorization")
-        user = UserModel.query.filter_by(token=authorization).count()
-
-        if(user == 1):
-            return BukuModel.query.filter(BukuModel.judul_buku.like(f"%{query}%")).all(), 200
+        user = MahasiswaLogin.query.filter_by(token=authorization).count()
+        petugasLogin = PetugasLogin.query.filter_by(
+            token=authorization).count()
+        if ((user == 1) or (petugasLogin == 1)):
+            return Buku.query.filter(Buku.judul_buku.like(f"%{query}%")).all(), 200
         else:
             abort(403, message="Forbidden: Authentication token doesn't exist")
 
@@ -256,9 +301,11 @@ class detail_buku(Resource):
     def get(self, buku_id):
         headers = request.headers
         authorization = headers.get("Authorization")
-        result = BukuModel.query.filter_by(id=buku_id).first()
-        user = UserModel.query.filter_by(token=authorization).count()
-        if (user == 1):
+        result = Buku.query.filter_by(id=buku_id).first()
+        user = MahasiswaLogin.query.filter_by(token=authorization).count()
+        petugasLogin = PetugasLogin.query.filter_by(
+            token=authorization).count()
+        if ((user == 1) or (petugasLogin == 1)):
             if not result:
                 abort(404, message="Not Found: Could not find Anything")
             return result
@@ -269,15 +316,21 @@ class detail_buku(Resource):
 class add_buku(Resource):
     @marshal_with(resource_fields_buku)
     def post(self):
-        args = buku_put_args.parse_args()
-        buku = BukuModel(isbn=args['isbn'], judul_buku=args['judul_buku'], pengarang=args['pengarang'],
-                         tahun_terbit=args['tahun_terbit'], qty_buku=args['qty_buku'])
-        try:
-            db.session.add(buku)
-            db.session.commit()
-            return buku, 200
-        except Exception:
-            abort(400, message=f"Bad Request: Something went wrong!")
+        authorization = request.headers.get("Authorization")
+        petugasLogin = PetugasLogin.query.filter_by(
+            token=authorization).count()
+        if (petugasLogin == 1):
+            args = buku_put_args.parse_args()
+            buku = Buku(isbn=args['isbn'], judul_buku=args['judul_buku'], pengarang=args['pengarang'],
+                        tahun_terbit=args['tahun_terbit'], qty_buku=args['qty_buku'])
+            try:
+                db.session.add(buku)
+                db.session.commit()
+                return buku, 200
+            except Exception:
+                abort(400, message=f"Bad Request: Something went wrong!")
+        else:
+            abort(403, message="Forbidden: Authentication token doesn't exist")
 
 
 class delete_buku(Resource):
@@ -285,9 +338,10 @@ class delete_buku(Resource):
     def delete(self, buku_id):
         headers = request.headers
         authorization = headers.get("Authorization")
-        user = UserModel.query.filter_by(token=authorization).count()
-        result = BukuModel.query.filter_by(id=buku_id).first()
-        if (user == 1):
+        petugasLogin = PetugasLogin.query.filter_by(
+            token=authorization).count()
+        result = Buku.query.filter_by(id=buku_id).first()
+        if (petugasLogin == 1):
             if not result:
                 abort(404, message="Not Found: Could not find Anything")
             else:
@@ -303,9 +357,10 @@ class update_buku(Resource):
     def patch(self, buku_id):
         headers = request.headers
         authorization = headers.get("Authorization")
-        user = UserModel.query.filter_by(token=authorization).count()
-        result = BukuModel.query.filter_by(id=buku_id).first()
-        if (user == 1):
+        petugasLogin = PetugasLogin.query.filter_by(
+            token=authorization).count()
+        result = Buku.query.filter_by(id=buku_id).first()
+        if (petugasLogin == 1):
             if not result:
                 abort(404, message="Not Found: Could not find Anything")
             else:
@@ -329,13 +384,13 @@ class update_buku(Resource):
 class get_all_mahasiswa(Resource):
     @marshal_with(resource_fields_mahasiswa)
     def get(self):
-        return SiswaModel.query.all()
+        return Siswa.query.all()
 
 
 class detail_mahasiswa(Resource):
     @marshal_with(resource_fields_mahasiswa)
     def get(self, nim):
-        result = SiswaModel.query.filter_by(nim=nim).first()
+        result = Siswa.query.filter_by(nim=nim).first()
         if not result:
             abort(404, message="Could not find anything")
         return result
@@ -344,22 +399,29 @@ class detail_mahasiswa(Resource):
 class add_mahasiswa(Resource):
     @marshal_with(resource_fields_mahasiswa)
     def post(self):
-        args = mahasiswa_put_args.parse_args()
-        mahasiswa = SiswaModel(
-            nim=args['nim'], nama=args['nama'], no_hp=args['no_hp'])
-        try:
-            db.session.add(mahasiswa)
-            db.session.commit()
-            return mahasiswa, 200
-        except Exception:
-            abort(400, message=f"Bad Request: NIM already been used")
+        headers = request.headers
+        authorization = headers.get("Authorization")
+        petugasLogin = PetugasLogin.query.filter_by(
+            token=authorization).count()
+        if (petugasLogin == 1):
+            args = mahasiswa_put_args.parse_args()
+            mahasiswa = Siswa(
+                nim=args['nim'], nama=args['nama'], no_hp=args['no_hp'])
+            try:
+                db.session.add(mahasiswa)
+                db.session.commit()
+                return mahasiswa, 200
+            except Exception:
+                abort(400, message=f"Bad Request: NIM already been used")
+        else:
+            abort(403, message="Forbidden: Authentication token doesn't exist")
 
 
 class add_petugas(Resource):
     @marshal_with(resource_fields_petugas)
     def post(self):
         args = petugas_put_args.parse_args()
-        petugas = PetugasModel(nama=args['nama'], no_hp=args['no_hp'])
+        petugas = Petugas(nama=args['nama'], no_hp=args['no_hp'])
         try:
             db.session.add(petugas)
             db.session.commit()
@@ -371,7 +433,7 @@ class add_petugas(Resource):
 class detail_petugas(Resource):
     @marshal_with(resource_fields_petugas)
     def get(self, id_petugas):
-        result = PetugasModel.query.filter_by(id=id_petugas).first()
+        result = Petugas.query.filter_by(id=id_petugas).first()
         if not result:
             abort(404, message="Could not find anything")
         return result, 200
@@ -380,85 +442,147 @@ class detail_petugas(Resource):
 class add_peminjaman(Resource):
     @marshal_with(resource_fields_peminjaman)
     def post(self):
-        args = peminjaman_put_args.parse_args()
-        try:
-            mahasiswa = SiswaModel.query.filter_by(
-                nim=args['nim_mahasiswa']).first()
-            petugas = PetugasModel.query.filter_by(
-                id=args['id_petugas']).first()
-            peminjaman = PeminjamanModel(tanggal_peminjaman=date.today(), tanggal_kembali=(
-                date.today()) + timedelta(weeks=2), nim_mahasiswa=mahasiswa.nim, id_petugas=petugas.id)
-            db.session.add(peminjaman)
-            db.session.commit()
-            return peminjaman, 201
-        except Exception as e:
-            abort(400, message=f"Bad Request: Something went wrong {e}")
+        headers = request.headers
+        authorization = headers.get("Authorization")
+        petugasLogin = PetugasLogin.query.filter_by(
+            token=authorization).count()
+        if (petugasLogin == 1):
+            args = peminjaman_put_args.parse_args()
+            try:
+                mahasiswa = Siswa.query.filter_by(
+                    nim=args['nim_mahasiswa']).first()
+                petugas = Petugas.query.filter_by(
+                    id=args['id_petugas']).first()
+                peminjaman = Peminjaman(tanggal_peminjaman=date.today(), tanggal_kembali=(
+                    date.today()) + timedelta(weeks=2), nim_mahasiswa=mahasiswa.nim, id_petugas=petugas.id)
+                db.session.add(peminjaman)
+                db.session.commit()
+                return peminjaman, 201
+            except Exception as e:
+                abort(400, message=f"Bad Request: Something went wrong {e}")
+        else:
+            abort(403, message="Forbidden: Authentication token doesn't exist")
 
 
 class add_detail_peminjaman(Resource):
     @marshal_with(resource_fields_peminjaman_detail)
     def post(self, id_peminjaman):
-        args = peminjaman_detail_put_args.parse_args()
-        buku = BukuModel.query.filter_by(id=args['id_buku']).first()
-        if (buku.qty_buku <= 0):
-            abort(400, message=f"Bad Request: Buku Stock Not Available")
-        try:
-            peminjaman = PeminjamanModel.query.filter_by(
-                id_peminjaman=id_peminjaman).first()
-            peminjaman_detail = PeminjamanDetailModel(
-                id_peminjaman=peminjaman.id_peminjaman, id_buku=buku.id)
-            buku.qty_buku = buku.qty_buku - 1
-            db.session.add(peminjaman_detail)
-            db.session.commit()
-            return peminjaman_detail, 201
-        except Exception as e:
-            abort(400, message=f"Bad Request: Something went wrong | {e}")
+        headers = request.headers
+        authorization = headers.get("Authorization")
+        petugasLogin = PetugasLogin.query.filter_by(
+            token=authorization).count()
+        if (petugasLogin == 1):
+            args = peminjaman_detail_put_args.parse_args()
+            buku = Buku.query.filter_by(id=args['id_buku']).first()
+            if (buku.qty_buku <= 0):
+                abort(400, message=f"Bad Request: Buku Stock Not Available")
+            try:
+                peminjaman = Peminjaman.query.filter_by(
+                    id_peminjaman=id_peminjaman).first()
+                peminjaman_detail = PeminjamanDetail(
+                    id_peminjaman=peminjaman.id_peminjaman, id_buku=buku.id)
+                buku.qty_buku = buku.qty_buku - 1
+                db.session.add(peminjaman_detail)
+                db.session.commit()
+                return peminjaman_detail, 201
+            except Exception as e:
+                abort(400, message=f"Bad Request: Something went wrong | {e}")
+        else:
+            abort(403, message="Forbidden: Authentication token doesn't exist")
 
 
 class get_detail_peminjaman(Resource):
     @marshal_with(resource_fields_peminjaman_detail)
     def get(self, id_peminjaman):
-        result = PeminjamanDetailModel.query.filter_by(
-            id_peminjaman=id_peminjaman).all()
-        if not result:
-            abort(404, message="Could not find anything")
-        return result
+        headers = request.headers
+        authorization = headers.get("Authorization")
+        petugasLogin = PetugasLogin.query.filter_by(
+            token=authorization).count()
+        if (petugasLogin == 1):
+            result = PeminjamanDetail.query.filter_by(
+                id_peminjaman=id_peminjaman).all()
+            if not result:
+                abort(404, message="Could not find anything")
+            return result
+        else:
+            abort(403, message="Forbidden: Authentication token doesn't exist")
 
 
 class get_complete_data_peminjaman(Resource):
     @marshal_with(resource_fields_peminjaman_data_list)
     def get(self, id_peminjaman):
-        peminjaman_result = PeminjamanModel.query.filter_by(
+        peminjaman_result = Peminjaman.query.filter_by(
             id_peminjaman=id_peminjaman).first()
         if not peminjaman_result:
             abort(404, message="Could not find anything")
 
-        detail_result = PeminjamanDetailModel.query.filter_by(
+        detail_result = PeminjamanDetail.query.filter_by(
             id_peminjaman=id_peminjaman).all()
         result = {'id_peminjaman': peminjaman_result.id_peminjaman, 'tanggal_peminjaman': peminjaman_result.tanggal_peminjaman, 'tanggal_kembali': peminjaman_result.tanggal_kembali,
                   'denda': peminjaman_result.denda, 'nim_mahasiswa': peminjaman_result.nim_mahasiswa, 'id_petugas': peminjaman_result.id_petugas, 'detail_data': detail_result}
         return result
 
 
-class get_all_user(Resource):
-    @marshal_with(resource_fields_user)
+class get_all_user_mahasiswa(Resource):
+    @marshal_with(resource_fields_mahasiswa_login)
     def get(self):
         headers = request.headers
         authorization = headers.get("Authorization")
-        user = UserModel.query.filter_by(token=authorization).count()
-
-        if(user == 1):
-            return UserModel.query.all(), 200
+        petugasLogin = PetugasLogin.query.filter_by(
+            token=authorization).count()
+        if (petugasLogin == 1):
+            return MahasiswaLogin.query.all(), 200
         else:
             abort(403, message="Forbidden: Authentication token doesn't exist")
 
-class sign_up(Resource):
-    @marshal_with(resource_fields_user)
+
+class sign_up_petugas(Resource):
+    @marshal_with(resource_fields_petugas_login)
+    def post(self):
+        args = petugas_login_put_args.parse_args()
+        checkIdPetugas = Petugas.query.filter_by(id=args['id_petugas']).count()
+        if (checkIdPetugas == 0):
+            abort(400, message="Bad Request: id petugas doesn't exist")
+
+        try:
+            generated_token = secretEncodeDummy.dumps(
+                args['email'], salt='email_verification')
+            petugasLogin = PetugasLogin(
+                id_petugas=args['id_petugas'], email=args['email'], password=args['password'], token=generated_token)
+            db.session.add(petugasLogin)
+            db.session.commit()
+
+            return petugasLogin, 201
+        except Exception as e:
+            abort(400, message=f"Bad Request: Something went wrong {e}")
+
+
+class sign_in_petugas(Resource):
+    @marshal_with(resource_fields_user_sign_in)
     def post(self):
         args = user_put_args.parse_args()
-        checkUserAvability = UserModel.query.filter_by(
+        login = PetugasLogin.query.filter(and_(
+            PetugasLogin.email == args['email'], PetugasLogin.password == args['password'])).first()
+        if not login:
+            abort(
+                400, message="Bad Request: Login Unsuccessfull Check email and password")
+        if login:
+            return login, 200
+        else:
+            abort(401, message="Unauthorized: Petugas Doesn't Exist")
+
+
+class sign_up_mahasiswa(Resource):
+    @marshal_with(resource_fields_mahasiswa_login)
+    def post(self):
+        args = mahasiswa_login_put_args.parse_args()
+        checkNimMahasiswa = Siswa.query.filter_by(
+            nim=args['nim']).count()
+        checkEmailAvailable = MahasiswaLogin.query.filter_by(
             email=args['email']).count()
-        if (checkUserAvability >= 1):
+        if (checkNimMahasiswa == 0):
+            abort(400, message="Bad Request: NIM doesn't exist")
+        if (checkEmailAvailable >= 1):
             abort(400, message="Bad Request: Email already used")
         if policy.test(args['password']):
             abort(400, message="Bad Request: Password not strong enough | password atleast 8 characters, Has A digit, and Has Uppercase Letter")
@@ -466,9 +590,9 @@ class sign_up(Resource):
         try:
             generated_token = secretEncodeDummy.dumps(
                 args['email'], salt='email_verification')
-            user = UserModel(
-                email=args['email'], password=args['password'], token=generated_token)
-            db.session.add(user)
+            mahasiswaLogin = MahasiswaLogin(
+                nim=args['nim'], email=args['email'], password=args['password'], token=generated_token)
+            db.session.add(mahasiswaLogin)
             db.session.commit()
 
             # Send Email
@@ -479,21 +603,20 @@ class sign_up(Resource):
                            token=generated_token, _external=True)
             msg.body = f'Silahkan klik link berikut ini untuk memverifikasi akun anda: {link}'
             mail.send(msg)
-            return user, 201
+            return mahasiswaLogin, 201
         except Exception as e:
             abort(400, message=f"Bad Request: Something went wrong {e}")
 
 
-class sign_in(Resource):
+class sign_in_mahasiswa(Resource):
     @marshal_with(resource_fields_user_sign_in)
     def post(self):
         args = user_put_args.parse_args()
-        login = UserModel.query.filter(and_(
-            UserModel.email == args['email'], UserModel.password == args['password'])).first()
+        login = MahasiswaLogin.query.filter(and_(
+            MahasiswaLogin.email == args['email'], MahasiswaLogin.password == args['password'])).first()
         if not login:
             abort(
                 400, message="Bad Request: Login Unsuccessfull Check email and password")
-
         if(login.verify_status == True):
             return login, 200
         else:
@@ -502,13 +625,13 @@ class sign_in(Resource):
 
 @app.route('/confirm_email/<token>', methods=['GET'])
 def confirm_email(token):
-    user = UserModel.query.filter_by(token=token).first()
+    mahasiswa = MahasiswaLogin.query.filter_by(token=token).first()
     try:
         secretEncodeDummy.loads(token, salt='email_verification', max_age=3600)
-        user.verify_status = True
+        mahasiswa.verify_status = True
         db.session.commit()
     except SignatureExpired:
-        db.session.delete(user)
+        db.session.delete(mahasiswa)
         db.session.commit()
         return jsonify({"message": "ERROR: Token Has Been Expired"}), 401
     except Exception as e:
@@ -516,14 +639,15 @@ def confirm_email(token):
     return jsonify({"message": "OK: Email Have been successfully verify"}), 201
 
 
-class delete_user(Resource):
+class delete_user_mahasiswa(Resource):
     @marshal_with(resource_fields_user)
     def delete(self, user_id):
         headers = request.headers
         authorization = headers.get("Authorization")
-        user = UserModel.query.filter_by(token=authorization).count()
-        result = UserModel.query.filter_by(id=user_id).first()
-        if (user == 1):
+        petugasLogin = PetugasLogin.query.filter_by(
+            token=authorization).count()
+        result = MahasiswaLogin.query.filter_by(id=user_id).first()
+        if (petugasLogin == 1):
             if not result:
                 abort(404, message="Not Found: Could not find Anything")
             else:
@@ -536,13 +660,16 @@ class delete_user(Resource):
 # ===== ENDPOINTS =====
 
 
+db.create_all()
 # AUTH
-api.add_resource(sign_up, "/signup")
-api.add_resource(sign_in, "/signin")
+api.add_resource(sign_up_mahasiswa, "/mahasiswa/signup")
+api.add_resource(sign_in_mahasiswa, "/mahasiswa/signin")
+api.add_resource(sign_up_petugas, "/petugas/signup")
+api.add_resource(sign_in_petugas, "/petugas/signin")
 
 # USER
-api.add_resource(get_all_user, "/users")
-api.add_resource(delete_user, "/user/<int:user_id>")
+api.add_resource(get_all_user_mahasiswa, "/users")
+api.add_resource(delete_user_mahasiswa, "/user/<int:user_id>")
 
 # BUKU
 api.add_resource(get_all_buku, "/buku")
