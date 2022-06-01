@@ -8,7 +8,7 @@ from unittest import result
 from webbrowser import get
 from xmlrpc.client import boolean
 
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, send_from_directory
 from flask_mail import Mail, Message
 from flask_restful import (Api, Resource, abort, fields, marshal, marshal_with,
                            reqparse, url_for)
@@ -17,10 +17,11 @@ from itsdangerous import SignatureExpired, URLSafeTimedSerializer
 from sqlalchemy import Column, false, and_, Date, ForeignKey
 from datetime import date, timedelta
 from password_strength import PasswordPolicy, PasswordStats
-
+from flask_swagger_ui import get_swaggerui_blueprint
 
 app = Flask(__name__)
 api = Api(app)
+
 mail = Mail(app)
 
 # Configure Database
@@ -33,6 +34,20 @@ secretEncodeDummy = URLSafeTimedSerializer('SecretTokenDummy!')
 app.config.from_pyfile('config.cfg')
 mail = Mail(app)
 
+@app.route('/static/<path:path>')
+def send_static(path):
+    return send_from_directory('static', path)
+
+SWAGGER_URL = '/docs'
+API_URL = '/static/swagger.json'
+swaggerui_blueprint = get_swaggerui_blueprint(
+    SWAGGER_URL,
+    API_URL,
+    config = {
+        'app_name': "PABW-PERPUS REST API Documentation"
+    }
+)
+app.register_blueprint(swaggerui_blueprint, url_prefix=SWAGGER_URL)
 # password policy
 policy = PasswordPolicy.from_names(
     length=8,  # min length: 8
@@ -266,7 +281,6 @@ resource_fields_get_peminjaman = {
 
 
 # ===== ENDPOINTS CONFIGURE =====
-
 class get_all_buku(Resource):
     @marshal_with(resource_fields_buku)
     def get(self):
@@ -279,6 +293,11 @@ class get_all_buku(Resource):
             return Buku.query.all(), 200
         else:
             abort(403, message="Forbidden: Authentication token doesn't exist")
+
+class get_all_buku_docs(Resource):
+    @marshal_with(resource_fields_buku)
+    def get(self):
+            return Buku.query.all(), 200
 
 
 class search_buku(Resource):
@@ -673,6 +692,7 @@ api.add_resource(delete_user_mahasiswa, "/user/<int:user_id>")
 
 # BUKU
 api.add_resource(get_all_buku, "/buku")
+api.add_resource(get_all_buku_docs, "/buku-docs")
 api.add_resource(search_buku, "/buku/search")
 api.add_resource(detail_buku, "/buku/<int:buku_id>")
 api.add_resource(delete_buku, "/buku/<int:buku_id>")

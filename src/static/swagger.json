@@ -1,0 +1,65 @@
+{
+    "openapi": "3.0.0",
+    "info": {
+      "description": "Dokumentasi REST API mengenai perpustakaan",
+      "version": "1.0.0",
+      "title": "Perpus Rest API Documentation",
+      "license": {
+        "name": "MIT",
+        "url": "https://opensource.org/licenses/MIT"
+      }
+    },
+    "tags": [
+        {
+          "name": "Authentication",
+          "description": "Consist of signup and signin, also users could be petugas or mahasiswa"
+        },
+        {
+            "name": "Buku",
+            "description": "All available books that are been input in perpus"
+        },
+        {
+            "name": "Peminjaman",
+            "description": "Consist of request for peminjaman"
+        },
+        {
+            "name": "Siswa",
+            "description": "Manage Mahasiswa data or perpus member"
+        },
+        {
+            "name": "Petugas",
+            "description": "Manage perpus employee for managing the perpus operation"
+        }
+    ],
+    "paths": {
+        "/buku-docs": {
+            "get": {
+              "tags": [
+                "Buku"
+              ],
+              "summary": "return all buku",
+              "responses": {
+                "200": {
+                  "description": "OK",
+                  "schemas": {}
+                }
+              }
+            },
+            "produces": [
+                "application/json"
+            ]
+        }
+    },
+    "components": {
+        "schemas": {
+            "token": {
+                "properties": {
+                  "token": {
+                    "type": "string"
+                  }
+                }
+              }
+        }
+    }
+
+}
