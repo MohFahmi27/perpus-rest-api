@@ -1,6 +1,9 @@
 # Flask REST API Implementation
 Simple REST API for local library using flask restful.
 
+## API Usage Example:
+[Postman Public Docs](https://documenter.getpostman.com/view/8561119/Uz5Dqxur)
+
 ```
 MIT License
 
